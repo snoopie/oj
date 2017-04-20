@@ -4,10 +4,6 @@ env:
   global:
     - MAKE="make -j 2"
 
-cache:
-  - ccache
-  - bundler
-
 language: ruby
 rvm:
   - 1.9.3
