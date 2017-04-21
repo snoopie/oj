@@ -71,7 +71,7 @@ str_to_value(ParseInfo pi, const char *str, size_t len, const char *orig) {
 
 #if (RUBY_VERSION_MAJOR == 1 && RUBY_VERSION_MINOR == 8)
 static VALUE
-parse_xml_time(const char *str, int len) {
+oj_parse_xml_time(const char *str, int len) {
     return rb_funcall(rb_cTime, oj_parse_id, 1, rb_str_new(str, len));
 }
 #else
@@ -92,8 +92,8 @@ parse_num(const char *str, const char *end, int cnt) {
     return n;
 }
 
-static VALUE
-parse_xml_time(const char *str, int len) {
+VALUE
+oj_parse_xml_time(const char *str, int len) {
     VALUE	args[8];
     const char	*end = str + len;
     int		n;
@@ -257,7 +257,7 @@ hat_cstr(ParseInfo pi, Val parent, Val kval, const char *str, size_t len) {
 	    }
 	    break;
 	case 't': // time
-	    parent->val = parse_xml_time(str, len);
+	    parent->val = oj_parse_xml_time(str, len);
 	    break;
 	default:
 	    return 0;
@@ -284,11 +284,7 @@ hat_num(ParseInfo pi, Val parent, Val kval, NumInfo ni) {
 		    }
 		}
 		if (86400 == ni->exp) { // UTC time
-#if HAS_NANO_TIME
 		    parent->val = rb_time_nano_new(ni->i, (long)nsec);
-#else
-		    parent->val = rb_time_new(ni->i, (long)(nsec / 1000));
-#endif
 		    // Since the ruby C routines alway create local time, the
 		    // offset and then a convertion to UTC keeps makes the time
 		    // match the expected value.
@@ -296,24 +292,6 @@ hat_num(ParseInfo pi, Val parent, Val kval, NumInfo ni) {
 		} else if (ni->hasExp) {
 		    time_t	t = (time_t)(ni->i + ni->exp);
 		    struct tm	*st = gmtime(&t);
-#if RUBY_VERSION_MAJOR == 1 && RUBY_VERSION_MINOR == 8
-		    // The only methods that allow the UTC offset to be set in
-		    // 1.8.7 is the parse() and xmlschema() methods. The
-		    // xmlschema() method always returns a Time instance that is
-		    // UTC time. (true on some platforms anyway) Time.parse()
-		    // fails on other Ruby versions until 2.2.0.
-		    char	buf[64];
-		    int		z = (0 > ni->exp ? -ni->exp : ni->exp) / 60;
-		    int		tzhour = z / 60;
-		    int		tzmin = z - tzhour * 60;
-		    int		cnt;
-
-		    cnt = sprintf(buf, "%04d-%02d-%02dT%02d:%02d:%02d.%09ld%c%02d:%02d",
-				  1900 + st->tm_year, 1 + st->tm_mon, st->tm_mday,
-				  st->tm_hour, st->tm_min, st->tm_sec, (long)nsec,
-				  (0 > ni->exp ? '-' : '+'), tzhour, tzmin);
-		    parent->val = rb_funcall(rb_cTime, oj_parse_id, 1, rb_str_new(buf, cnt));
-#else
 		    VALUE	args[8];
 
 		    args[0] = LONG2NUM(1900 + st->tm_year);
@@ -321,20 +299,11 @@ hat_num(ParseInfo pi, Val parent, Val kval, NumInfo ni) {
 		    args[2] = LONG2NUM(st->tm_mday);
 		    args[3] = LONG2NUM(st->tm_hour);
 		    args[4] = LONG2NUM(st->tm_min);
-#if NO_TIME_ROUND_PAD
-		    args[5] = rb_float_new((double)st->tm_sec + ((double)nsec) / 1000000000.0);
-#else
 		    args[5] = rb_float_new((double)st->tm_sec + ((double)nsec + 0.5) / 1000000000.0);
-#endif
 		    args[6] = LONG2NUM(ni->exp);
 		    parent->val = rb_funcall2(rb_cTime, oj_new_id, 7, args);
-#endif
 		} else {
-#if HAS_NANO_TIME
 		    parent->val = rb_time_nano_new(ni->i, (long)nsec);
-#else
-		    parent->val = rb_time_new(ni->i, (long)(nsec / 1000));
-#endif
 		}
 	    }
 	    break;

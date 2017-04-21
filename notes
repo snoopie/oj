@@ -22,40 +22,7 @@ Comparison Matrix
            
 go/src/github.com/iq4health/router/
 
-- refactor
- - plan
-  - custom mode
-   - time
-    - always with zone unless date
-     - need to pass in class or flag to encode and decode
-    - for unix with zone better to get the raw string before encoding
-     - *how to get that without indicator in key? maybe use the different keys and check class*
-      - use funcs from object.c
-     
-   - add class with classname in val_stack
-    - lookup class early
-    - is classname still needed with early lookup?
 
-   - code.[ch] - for custom, compat, and rails
-    - update dump_compat to use code
-   - move dump into custom?
-    - same with others?
-    - add decode functions
-   - exception encoding
-  - Enumerable
-  
-  - cleanup dump.c
-  - parse
-   - handle rails and custom
-
-  - reorg tests
-   - isolated rails stuff
-    - only need to verify JSON methods have beed defined and not overridden
-    - really a mimic tests
-    - can rails tests not be run for 1.9.3?
-
-  - create dump_custom, copy from compat
- 
  - what happened to obj mode loading time?
 
  - Process::Status

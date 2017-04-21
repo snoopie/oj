@@ -16,6 +16,19 @@
 #include "resolve.h"
 
 extern void	oj_set_obj_ivar(Val parent, Val kval, VALUE value);
+extern VALUE	oj_parse_xml_time(const char *str, int len); // from object.c
+
+static void
+dump_obj_str(VALUE obj, int depth, Out out) {
+    struct _Attr	attrs[] = {
+	{ "s", 1, Qnil },
+	{ NULL, 0, Qnil },
+    };
+    attrs->value = rb_funcall(obj, oj_to_s_id, 0);
+
+    oj_code_attrs(obj, attrs, depth, out);
+}
+
 
 static void
 bigdecimal_dump(VALUE obj, int depth, Out out) {
@@ -63,39 +76,14 @@ complex_load(VALUE clas, VALUE args) {
     return rb_complex_new(rb_hash_aref(args, rb_id2str(real_id)), rb_hash_aref(args, rb_id2str(imag_id)));
 }
 
-static ID	xmlschema_id = 0;
-static ID	to_time_id = 0;
-
 static void
-datetime_dump(VALUE obj, int depth, Out out) {
+date_dump(VALUE obj, int depth, Out out) {
     struct _Attr	attrs[] = {
-	{ "xmlschema", 9, Qnil },
+	{ "s", 1, Qnil },
 	{ NULL, 0, Qnil },
     };
-    if (0 == xmlschema_id) {
-	xmlschema_id = rb_intern("xmlschema");
-	to_time_id = rb_intern("to_time");
-    }
-    switch (out->opts->time_format) {
-    case XmlTime:
-	attrs->name = "xmlschema";
-	attrs->len = 9;
-	attrs->value = rb_funcall(obj, xmlschema_id, 1, INT2FIX(out->opts->sec_prec));
-	break;
-    case UnixZTime:
-    case UnixTime:
-	attrs->name = "unix";
-	attrs->len = 4;
-	attrs->value = Qundef;
-	attrs->time = rb_funcall(obj, to_time_id, 0);
-	break;
-    case RubyTime:
-    default:
-	attrs->name = "ruby";
-	attrs->len = 4;
-	attrs->value = rb_funcall(obj, oj_to_s_id, 0);
-	break;
-    }
+    attrs->value = rb_funcall(obj, rb_intern("iso8601"), 0);
+
     oj_code_attrs(obj, attrs, depth, out);
 }
 
@@ -103,16 +91,18 @@ static VALUE
 date_load(VALUE clas, VALUE args) {
     volatile VALUE	v;
     
-    if (0 == xmlschema_id) {
-	xmlschema_id = rb_intern("xmlschema");
-	to_time_id = rb_intern("to_time");
-    }
-    if (Qnil != (v = rb_hash_aref(args, rb_id2str(xmlschema_id)))) {
-	return rb_funcall(oj_date_class, rb_intern("xmlschema"), 1, v);
-    } else if (Qnil != (v = rb_hash_aref(args, rb_str_new2("ruby")))) {
+    if (Qnil != (v = rb_hash_aref(args, rb_str_new2("s")))) {
 	return rb_funcall(oj_date_class, rb_intern("parse"), 1, v);
-    } else if (Qnil != (v = rb_hash_aref(args, rb_str_new2("unix")))) {
-	return rb_funcall(rb_funcall(rb_cTime, rb_intern("at"), 1, v), rb_intern("to_date"), 0);
+    }
+    return Qnil;
+}
+
+static VALUE
+datetime_load(VALUE clas, VALUE args) {
+    volatile VALUE	v;
+    
+    if (Qnil != (v = rb_hash_aref(args, rb_str_new2("s")))) {
+	return rb_funcall(oj_datetime_class, rb_intern("parse"), 1, v);
     }
     return Qnil;
 }
@@ -131,6 +121,14 @@ openstruct_dump(VALUE obj, int depth, Out out) {
     attrs->value = rb_funcall(obj, table_id, 0);
 
     oj_code_attrs(obj, attrs, depth, out);
+}
+
+static VALUE
+openstruct_load(VALUE clas, VALUE args) {
+    if (0 == table_id) {
+	table_id = rb_intern("table");
+    }
+    return rb_funcall(clas, oj_new_id, 1, rb_hash_aref(args, rb_id2str(table_id)));
 }
 
 static void
@@ -189,47 +187,44 @@ rational_load(VALUE clas, VALUE args) {
 			   rb_hash_aref(args, rb_id2str(denominator_id)));
 }
 
-static ID	options_id = 0;
-static ID	source_id = 0;
+static VALUE
+regexp_load(VALUE clas, VALUE args) {
+    volatile VALUE	v;
+    
+    if (Qnil != (v = rb_hash_aref(args, rb_str_new2("s")))) {
+	return rb_funcall(rb_cRegexp, oj_new_id, 1, v);
+    }
+    return Qnil;
+}
 
 static void
-regexp_dump(VALUE obj, int depth, Out out) {
+time_dump(VALUE obj, int depth, Out out) {
     struct _Attr	attrs[] = {
-	{ "source", 9, Qnil },
-	{ "options", 11, Qnil },
+	{ "time", 4, Qundef, 0, Qundef },
 	{ NULL, 0, Qnil },
     };
-    if (0 == options_id) {
-	options_id = rb_intern("options");
-	source_id = rb_intern("source");
-    }
-    attrs[0].value = rb_funcall(obj, source_id, 0);
-    attrs[1].value = rb_funcall(obj, options_id, 0);
+    attrs->time = obj;
 
     oj_code_attrs(obj, attrs, depth, out);
 }
 
-static void
-dump_time(VALUE obj, int depth, Out out) {
-    switch (out->opts->time_format) {
-    case RubyTime:	oj_dump_obj_to_s(obj, out);	break;
-    case XmlTime:	oj_dump_xml_time(obj, out);	break;
-    case UnixZTime:	oj_dump_time(obj, out, 1);	break;
-    case UnixTime:
-    default:		oj_dump_time(obj, out, 0);	break;
-    }
+static VALUE
+time_load(VALUE clas, VALUE args) {
+    // Value should have already been replaced in one of the hash_set_xxx
+    // functions.
+    return args;
 }
 
 static struct _Code	codes[] = {
     { "BigDecimal", Qnil, bigdecimal_dump, NULL, true },
     { "Complex", Qnil, complex_dump, complex_load, true },
-    { "Date", Qnil, datetime_dump, date_load, true },
-    { "DateTime", Qnil, datetime_dump, NULL, true },
-    { "OpenStruct", Qnil, openstruct_dump, NULL, true },
+    { "Date", Qnil, date_dump, date_load, true },
+    { "DateTime", Qnil, date_dump, datetime_load, true },
+    { "OpenStruct", Qnil, openstruct_dump, openstruct_load, true },
     { "Range", Qnil, range_dump, range_load, true },
     { "Rational", Qnil, rational_dump, rational_load, true },
-    { "Regexp", Qnil, regexp_dump, NULL, true },
-    { "Time", Qnil, dump_time, NULL, true },
+    { "Regexp", Qnil, dump_obj_str, regexp_load, true },
+    { "Time", Qnil, time_dump, time_load, true },
     { NULL, Qundef, NULL, NULL, false },
 };
 
@@ -817,7 +812,7 @@ dump_data(VALUE obj, int depth, Out out, bool as_ok) {
 
 static void
 dump_regexp(VALUE obj, int depth, Out out, bool as_ok) {
-    regexp_dump(obj, depth, out);
+    dump_obj_str(obj, depth, out);
 }
 
 static void
@@ -915,10 +910,21 @@ hash_set_cstr(ParseInfo pi, Val kval, const char *str, size_t len, const char *o
 		rstr = rb_funcall(clas, oj_json_create_id, 1, rstr);
 	    }
 	}
-	if (T_OBJECT == rb_type(parent->val)) {
+	switch (rb_type(parent->val)) {
+	case T_OBJECT:
 	    oj_set_obj_ivar(parent, kval, rstr);
-	} else {
-	    rb_hash_aset(parent->val, rkey, rstr);
+	    break;
+	case T_HASH:
+	    if (4 == parent->klen && NULL != parent->key && rb_cTime == parent->clas && 0 == strncmp("time", parent->key, 4)) {
+		if (Qnil == (parent->val = oj_parse_xml_time(str, len))) {
+		    parent->val = rb_funcall(rb_cTime, rb_intern("parse"), 1, rb_str_new(str, len));
+		}
+	    } else {
+		rb_hash_aset(parent->val, rkey, rstr);
+	    }
+	    break;
+	default:
+	    break;
 	}
     }
 }
@@ -957,10 +963,49 @@ static void
 hash_set_num(struct _ParseInfo *pi, Val kval, NumInfo ni) {
     Val	parent = stack_peek(&pi->stack);
 
-    if (T_OBJECT == rb_type(parent->val)) {
+    switch (rb_type(parent->val)) {
+    case T_OBJECT:
 	oj_set_obj_ivar(parent, kval, oj_num_as_value(ni));
-    } else {
-	rb_hash_aset(parent->val, calc_hash_key(pi, kval), oj_num_as_value(ni));
+	break;
+    case T_HASH:
+	if (4 == parent->klen && NULL != parent->key && rb_cTime == parent->clas && 0 == strncmp("time", parent->key, 4)) {
+	    int64_t	nsec = ni->num * 1000000000LL / ni->div;
+
+	    if (ni->neg) {
+		ni->i = -ni->i;
+		if (0 < nsec) {
+		    ni->i--;
+		    nsec = 1000000000LL - nsec;
+		}
+	    }
+	    if (86400 == ni->exp) { // UTC time
+		parent->val = rb_time_nano_new(ni->i, (long)nsec);
+		// Since the ruby C routines alway create local time, the
+		// offset and then a convertion to UTC keeps makes the time
+		// match the expected value.
+		parent->val = rb_funcall2(parent->val, oj_utc_id, 0, 0);
+	    } else if (ni->hasExp) {
+		time_t	t = (time_t)(ni->i + ni->exp);
+		struct tm	*st = gmtime(&t);
+		VALUE	args[8];
+
+		args[0] = LONG2NUM(1900 + st->tm_year);
+		args[1] = LONG2NUM(1 + st->tm_mon);
+		args[2] = LONG2NUM(st->tm_mday);
+		args[3] = LONG2NUM(st->tm_hour);
+		args[4] = LONG2NUM(st->tm_min);
+		args[5] = rb_float_new((double)st->tm_sec + ((double)nsec + 0.5) / 1000000000.0);
+		args[6] = LONG2NUM(ni->exp);
+		parent->val = rb_funcall2(rb_cTime, oj_new_id, 7, args);
+	    } else {
+		parent->val = rb_time_nano_new(ni->i, (long)nsec);
+	    }
+	} else {
+	    rb_hash_aset(parent->val, calc_hash_key(pi, kval), oj_num_as_value(ni));
+	}
+	break;
+    default:
+	break;
     }
 }
 
@@ -968,10 +1013,15 @@ static void
 hash_set_value(ParseInfo pi, Val kval, VALUE value) {
     Val	parent = stack_peek(&pi->stack);
 
-    if (T_OBJECT == rb_type(parent->val)) {
+    switch (rb_type(parent->val)) {
+    case T_OBJECT:
 	oj_set_obj_ivar(parent, kval, value);
-    } else {
+	break;
+    case T_HASH:
 	rb_hash_aset(parent->val, calc_hash_key(pi, kval), value);
+	break;
+    default:
+	break;
     }
 }
 

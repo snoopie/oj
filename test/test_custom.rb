@@ -295,21 +295,34 @@ class CustomJuice < Minitest::Test
     dump_and_load(obj, false, :create_id => "^o", :create_additions => true)
   end
 
-  def xtest_date
+  def test_date
     obj = Date.new(2017, 1, 5)
-    dump_and_load(obj, true, :time_format => :ruby, :create_id => "^o", :create_additions => true)
-    dump_and_load(obj, true, :time_format => :unix, :create_id => "^o", :create_additions => true)
-    dump_and_load(obj, true, :time_format => :unix_zone, :create_id => "^o", :create_additions => true)
-    dump_and_load(obj, true, :time_format => :xmlschema, :create_id => "^o", :create_additions => true)
+    dump_and_load(obj, false, :create_id => "^o", :create_additions => true)
   end
 
+  def test_datetime
+    obj = DateTime.new(2017, 1, 5, 10, 20, 30)
+    dump_and_load(obj, false, :create_id => "^o", :create_additions => true)
+  end
 
-  # TBD
-  # Date
-  # DateTime
-  # OpenStruct
-  # Regexp
-  # Time
+  def test_regexp
+    # this notation must be used to get an == match later
+    obj = /(?ix-m:^yes$)/
+    dump_and_load(obj, false, :create_id => "^o", :create_additions => true)
+  end
+
+  def test_openstruct
+    obj = OpenStruct.new(:a => 1, 'b' => 2)
+    dump_and_load(obj, false, :create_id => "^o", :create_additions => true)
+  end
+
+  def test_time
+    obj = Time.now()
+    dump_and_load(obj, false, :time_format => :unix, :create_id => "^o", :create_additions => true)
+    dump_and_load_inspect(obj, false, :time_format => :unix_zone, :create_id => "^o", :create_additions => true)
+    dump_and_load_inspect(obj, false, :time_format => :xmlschema, :create_id => "^o", :create_additions => true)
+    dump_and_load_inspect(obj, false, :time_format => :ruby, :create_id => "^o", :create_additions => true)
+  end
 
   def dump_and_load(obj, trace=false, options={})
     options = options.merge(:indent => 2, :mode => :custom)
@@ -321,6 +334,20 @@ class CustomJuice < Minitest::Test
       assert_nil(loaded)
     else
       assert_equal(obj, loaded)
+    end
+    loaded
+  end
+
+  def dump_and_load_inspect(obj, trace=false, options={})
+    options = options.merge(:indent => 2, :mode => :custom)
+    json = Oj.dump(obj, options)
+    puts json if trace
+
+    loaded = Oj.load(json, options);
+    if obj.nil?
+      assert_nil(loaded)
+    else
+      assert_equal(obj.inspect, loaded.inspect)
     end
     loaded
   end

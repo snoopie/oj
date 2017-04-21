@@ -80,6 +80,9 @@ oj_code_load(Code codes, VALUE clas, VALUE args) {
 	    c->clas = path2class(c->name);
 	}
 	if (clas == c->clas) {
+	    if (NULL == c->decode) {
+		break;
+	    }
 	    return c->decode(clas, args);
 	}
     }
@@ -178,7 +181,13 @@ oj_code_attrs(VALUE obj, Attr attrs, int depth, Out out) {
 	}
 	if (Qundef == attrs->value) {
 	    if (Qundef != attrs->time) {
-		oj_dump_time(attrs->time, out, UnixZTime == out->opts->time_format);
+		switch (out->opts->time_format) {
+		case RubyTime:	oj_dump_ruby_time(attrs->time, out);	break;
+		case XmlTime:	oj_dump_xml_time(attrs->time, out);	break;
+		case UnixZTime:	oj_dump_time(attrs->time, out, true);	break;
+		case UnixTime:
+		default:	oj_dump_time(attrs->time, out, false);	break;
+		}
 	    } else {
 		char	buf[32];
 		char	*b = buf + sizeof(buf) - 1;
